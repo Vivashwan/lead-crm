@@ -1,0 +1,41 @@
+rules_version = '2';
+// No authentication by design (test project). These rules only allow
+// well-formed leads; anyone with the config can still read/write/delete.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function validStatus(s) {
+      return s in ['NEW', 'CONTACTED', 'QUALIFIED', 'PROPOSAL', 'WON', 'LOST'];
+    }
+
+    function validPriority(p) {
+      return p in ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
+    }
+
+    function validLead(d) {
+      return d.keys().hasOnly(['name', 'email', 'mobile', 'status', 'priority', 'createdAt', 'updatedAt'])
+        && d.keys().hasAll(['name', 'email', 'mobile', 'status', 'priority', 'createdAt', 'updatedAt'])
+        && d.name is string && d.name.size() >= 2 && d.name.size() <= 100
+        && d.email is string && d.email.size() <= 254
+        && d.email.matches('^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$')
+        && d.mobile is int && d.mobile >= 1000000000 && d.mobile <= 9999999999
+        && validStatus(d.status)
+        && validPriority(d.priority)
+        && d.createdAt is timestamp
+        && d.updatedAt == request.time;
+    }
+
+    match /leads/{leadId} {
+      allow read: if true;
+      allow create: if validLead(request.resource.data)
+        && request.resource.data.createdAt == request.time;
+      allow update: if validLead(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
